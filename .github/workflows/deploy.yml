@@ -1,0 +1,89 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  FRONTEND_IMAGE: ${{ github.repository }}/frontend
+  CMS_IMAGE: ${{ github.repository }}/cms
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd apps/frontend && npm install
+          cd ../cms && npm install
+
+      - name: Run tests
+        run: |
+          cd apps/frontend && npm test
+          cd ../cms && npm test
+
+  build-and-push:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./apps/frontend
+          file: ./docker/frontend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+
+      - name: Build and push CMS image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./apps/cms
+          file: ./docker/cms/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.CMS_IMAGE }}:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy to Digital Ocean
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            cd /opt/app
+            docker-compose pull
+            docker-compose up -d
+            docker system prune -f
+
+      - name: Health check
+        run: |
+          curl --fail https://${{ secrets.APP_DOMAIN }} || exit 1
+          curl --fail https://${{ secrets.CMS_DOMAIN }}/admin || exit 1

@@ -1,0 +1,62 @@
+services:
+  cms:
+    build:
+      context: .
+      dockerfile: docker/cms/Dockerfile.dev
+    ports:
+      - "1337:1337"
+    environment:
+      - NODE_ENV=development
+      - HOST=0.0.0.0
+      - PORT=1337
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=strapi
+      - DATABASE_USERNAME=strapi
+      - DATABASE_PASSWORD=your_secure_password
+      - DATABASE_SSL=false
+      - APP_KEYS=key1,key2,key3,key4
+      - API_TOKEN_SALT=tobemodified
+      - ADMIN_JWT_SECRET=tobemodified
+      - JWT_SECRET=tobemodified
+    volumes:
+      - ./apps/cms:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=strapi
+      - POSTGRES_USER=strapi
+      - POSTGRES_PASSWORD=your_secure_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - cms
+
+volumes:
+  postgres-data:
+  redis-data:
